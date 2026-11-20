@@ -1,0 +1,38 @@
+[
+  {
+    "channel": "whatsapp",
+    "sender_id": "es_client_01",
+    "message_id": "wamid.1001",
+    "text": "Hola buenas tardes"
+  },
+  {
+    "channel": "whatsapp",
+    "sender_id": "es_client_01",
+    "message_id": "wamid.1002",
+    "text": "Necesito un scraper para monitorizar precios de proveedores cada día, es urgente"
+  },
+  {
+    "channel": "whatsapp",
+    "sender_id": "es_client_01",
+    "message_id": "wamid.1002",
+    "text": "Necesito un scraper para monitorizar precios de proveedores cada día, es urgente"
+  },
+  {
+    "channel": "whatsapp",
+    "sender_id": "es_client_01",
+    "message_id": "wamid.1003",
+    "text": "Tenemos un presupuesto de 950€ para dejarlo listo esta semana"
+  },
+  {
+    "channel": "telegram",
+    "sender_id": "en_client_02",
+    "message_id": "tg.2001",
+    "text": "Hi, looking to build a Telegram bot for client bookings with a $1,200 budget"
+  },
+  {
+    "channel": "web",
+    "sender_id": "spam_actor_99",
+    "message_id": "web.9001",
+    "text": "Claim free crypto airdrop casino bonus now!"
+  }
+]
