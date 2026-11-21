@@ -11,6 +11,7 @@ from .storage import LeadStore
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint: replays a JSON script of webhooks through LeadQualificationEngine and prints summary/JSON."""
     parser = argparse.ArgumentParser(prog="lead-bot", description="KiberLabs 24/7 Omnichannel Lead Qualifier")
     sub = parser.add_subparsers(dest="cmd", required=True)
 

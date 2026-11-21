@@ -60,6 +60,7 @@ def _normalize(text: str) -> str:
 
 
 def detect_language(text: str, fallback: Literal["es", "en"] = "es") -> Literal["es", "en"]:
+    """Score Spanish vs. English lexical hints (plus inverted '?'/'ñ') and fall back on ties."""
     tokens = set(re.findall(r"[a-zñ]+", text.lower()))
     es_score = len(tokens.intersection(_ES_HINTS)) + (2 if "¿" in text or "ñ" in text.lower() else 0)
     en_score = len(tokens.intersection(_EN_HINTS))
@@ -71,6 +72,7 @@ def detect_language(text: str, fallback: Literal["es", "en"] = "es") -> Literal[
 
 
 def extract_budget_eur(text: str) -> float | None:
+    """Parse European/US currency expressions (e.g. '1.200€', '$1,500') within 50–250,000 EUR."""
     match = _BUDGET_RE.search(text)
     if not match:
         return None
@@ -80,7 +82,11 @@ def extract_budget_eur(text: str) -> float | None:
 
 
 def classify_message(text: str, fallback_lang: Literal["es", "en"] = "es") -> NLUResult:
-    """Zero-token deterministic bilingual intent, service, budget, and spam extractor."""
+    """Zero-token bilingual NLU pipeline for intent, service, budget, urgency, and spam detection.
+
+    Priority order: spam (>=3 links or scam phrases) -> human escalation ->
+    service inquiry -> budget provided -> greeting -> unknown.
+    """
     norm = _normalize(text)
     lang = detect_language(text, fallback=fallback_lang)
 

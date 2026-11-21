@@ -55,6 +55,11 @@ class LeadQualificationEngine:
         self.store = store
 
     def handle_message(self, msg: IncomingMessage) -> BotTurnResult:
+        """Process one inbound webhook turn with idempotent deduplication and state transitions.
+
+        Flow: check duplicate message_id -> run bilingual NLU -> merge captured service/budget
+        into session -> compute next state/reply/handoff -> atomically commit to SQLite WAL.
+        """
         existing = self.store.get_session(msg.channel, msg.sender_id)
         if self.store.is_duplicate(msg.channel, msg.message_id):
             return BotTurnResult(duplicate=True, intent=Intent.UNKNOWN, session=existing, reply_text=None)

@@ -45,6 +45,7 @@ class LeadStore:
     """Concurrent SQLite WAL store with webhook message-id deduplication and atomic handoff queue."""
 
     def __init__(self, db_path: str | Path) -> None:
+        """Initialize SQLite WAL database (busy_timeout=5000ms) and ensure session/queue tables exist."""
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), timeout=5.0)
@@ -61,6 +62,7 @@ class LeadStore:
         return str(row[0]).lower() if row else ""
 
     def is_duplicate(self, channel: str, message_id: str) -> bool:
+        """Return True if (channel, message_id) has already been processed by a prior webhook delivery."""
         row = self._conn.execute(
             "SELECT 1 FROM processed_messages WHERE channel = ? AND message_id = ?",
             (channel, message_id),
@@ -68,6 +70,7 @@ class LeadStore:
         return row is not None
 
     def get_session(self, channel: str, sender_id: str) -> LeadSession:
+        """Load persisted LeadSession for (channel, sender_id), or return a fresh NEW session."""
         row = self._conn.execute(
             "SELECT channel, sender_id, lang, state, service_need, estimated_budget_eur, urgent, updated_at "
             "FROM lead_sessions WHERE channel = ? AND sender_id = ?",
@@ -146,6 +149,7 @@ class LeadStore:
             return False
 
     def pending_handoffs(self) -> list[dict[str, object]]:
+        """Return all queued human-handoff tickets in FIFO order (oldest first)."""
         rows = self._conn.execute(
             "SELECT channel, sender_id, lang, reason, service_need, estimated_budget_eur, urgent, created_at "
             "FROM handoff_queue ORDER BY id ASC"

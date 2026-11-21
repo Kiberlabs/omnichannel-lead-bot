@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 
 
 class LeadState(str, Enum):
+    """Finite state machine lifecycle for an inbound B2B prospect conversation."""
+
     NEW = "new"
     AWAITING_SERVICE = "awaiting_service"
     AWAITING_BUDGET = "awaiting_budget"
@@ -16,6 +18,8 @@ class LeadState(str, Enum):
 
 
 class Intent(str, Enum):
+    """Deterministic zero-token intent label extracted from an inbound message."""
+
     GREETING = "greeting"
     SERVICE_INQUIRY = "service_inquiry"
     BUDGET_PROVIDED = "budget_provided"
@@ -25,6 +29,8 @@ class Intent(str, Enum):
 
 
 class IncomingMessage(BaseModel):
+    """Normalized inbound webhook event from WhatsApp, Telegram, or web chat."""
+
     channel: Literal["whatsapp", "telegram", "web"]
     sender_id: str = Field(min_length=2, max_length=80)
     message_id: str = Field(min_length=2, max_length=120)
@@ -33,6 +39,8 @@ class IncomingMessage(BaseModel):
 
 
 class LeadSession(BaseModel):
+    """Persisted per-(channel, sender_id) qualification state and captured slots."""
+
     sender_id: str
     channel: Literal["whatsapp", "telegram", "web"]
     lang: Literal["es", "en"] = "es"
@@ -44,6 +52,8 @@ class LeadSession(BaseModel):
 
 
 class HandoffPayload(BaseModel):
+    """Structured ticket enqueued for a human engineer once a lead qualifies or escalates."""
+
     sender_id: str
     channel: str
     lang: str
@@ -54,6 +64,8 @@ class HandoffPayload(BaseModel):
 
 
 class BotTurnResult(BaseModel):
+    """Outcome of handling one inbound webhook: updated session, outbound reply, and optional handoff."""
+
     duplicate: bool = False
     intent: Intent
     session: LeadSession
