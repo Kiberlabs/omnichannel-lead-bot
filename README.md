@@ -1,5 +1,7 @@
 # KiberLabs — 24/7 Omnichannel B2B Lead Qualification Bot
 
+[![CI](https://github.com/Kiberlabs/omnichannel-lead-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Kiberlabs/omnichannel-lead-bot/actions/workflows/ci.yml)
+
 ![KiberLabs Omnichannel Lead Bot 24/7](assets/cover_02_lead_bot.jpg)
 
 A lightweight, **zero-token bilingual (Spanish & English) lead qualification engine** for WhatsApp Cloud API, Telegram Bots, and B2B Web Widgets.
