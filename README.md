@@ -8,6 +8,8 @@ A lightweight, **zero-token bilingual (Spanish & English) lead qualification eng
 
 Built for SMEs and agencies that need instant `<1s` 24/7 lead intake without paying per-message LLM API costs or risking hallucinated pricing promises. Once a lead states their service need and approximate budget (or asks for a human specialist), the state machine atomically enqueues a structured `HandoffPayload` for the sales/engineering team.
 
+
+> **Public Evaluation Sandbox & Scope Note:** This repository contains the open reference core and deterministic `pytest` harness operating on synthetic fixtures (`data/sample_*`) under the [MIT License](LICENSE). Production connectors (live anti-bot scrapers, WhatsApp/Telegram cloud webhooks, ERP/SAP & VIES adapters, and multi-tenant deployment manifests) are maintained in **KiberLabs Private Enterprise Repositories** and delivered under client SOW.
 ---
 
 ## Conversation & State Flow
@@ -75,4 +77,4 @@ omnichannel-lead-bot/
 
 ## License
 
-MIT — Built by **KiberLabs Engineering** (*AI & Python Automation Studio*).
+[MIT](LICENSE) — Built by **KiberLabs Engineering** (*AI & Python Automation Studio*).
