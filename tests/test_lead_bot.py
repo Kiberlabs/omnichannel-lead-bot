@@ -129,3 +129,86 @@ def test_cli_simulation_end_to_end(tmp_path: Path, capsys: pytest.CaptureFixture
     assert len(out["turns"]) == 6
     assert sum(1 for t in out["turns"] if t["duplicate"]) == 1
     assert len(out["handoff_queue"]) == 2
+
+
+def test_complaint_optout_silences_thread_permanently_and_alerts_operator(tmp_path: Path) -> None:
+    from lead_bot.models import IncomingMessage, Intent, LeadState
+    from lead_bot.state_machine import LeadQualificationEngine
+    from lead_bot.storage import LeadStore
+
+    store = LeadStore(tmp_path / "optout.db")
+    try:
+        engine = LeadQualificationEngine(store)
+        res1 = engine.handle_message(
+            IncomingMessage(
+                channel="whatsapp",
+                sender_id="user_optout_1",
+                message_id="m_opt_1",
+                text="No me escribas mas, darme de baja RGPD",
+            )
+        )
+        assert res1.intent == Intent.COMPLAINT_OPTOUT
+        assert res1.session.state == LeadState.SILENCED
+        assert res1.reply_text is None
+        assert res1.handoff is not None and res1.handoff.reason == "complaint_optout" and res1.handoff.urgent is True
+
+        # Follow-up message remains silent and does not duplicate operator ticket
+        res2 = engine.handle_message(
+            IncomingMessage(
+                channel="whatsapp",
+                sender_id="user_optout_1",
+                message_id="m_opt_2",
+                text="Hola, sigo aqui",
+            )
+        )
+        assert res2.session.state == LeadState.SILENCED
+        assert res2.reply_text is None
+        assert res2.handoff is None
+        assert len(store.pending_handoffs()) == 1
+    finally:
+        store.close()
+
+
+def test_single_touch_warm_nudge_bounds_hours_and_failed_dispatch_skip(tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from lead_bot.models import IncomingMessage
+    from lead_bot.state_machine import LeadQualificationEngine
+    from lead_bot.storage import LeadStore
+
+    store = LeadStore(tmp_path / "nudge.db")
+    try:
+        engine = LeadQualificationEngine(store)
+        t0 = datetime(2026, 11, 22, 16, 0, tzinfo=timezone.utc)
+        # 2 idle leads (20h old at t_run) + 1 silenced lead (must never be nudged)
+        engine.handle_message(
+            IncomingMessage(channel="whatsapp", sender_id="lead_fail_1", message_id="n1", text="Need web scraping", received_at=t0)
+        )
+        engine.handle_message(
+            IncomingMessage(channel="telegram", sender_id="lead_ok_2", message_id="n2", text="Necesito un bot de WhatsApp", received_at=t0 + timedelta(minutes=5))
+        )
+        engine.handle_message(
+            IncomingMessage(channel="whatsapp", sender_id="lead_silenced", message_id="n3", text="Please unsubscribe me", received_at=t0)
+        )
+
+        # Outside business hours (22:30) -> zero nudges sent
+        night = datetime(2026, 11, 23, 22, 30, tzinfo=timezone.utc)
+        assert engine.dispatch_warm_nudges(lambda _: True, now=night, max_nudges=2) == []
+
+        # Inside business hours (12:00, 20h idle): first fails dispatch, second succeeds without wasting max_nudges=1
+        midday = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+        attempted: list[str] = []
+
+        def _send(nudge) -> bool:
+            attempted.append(nudge.sender_id)
+            return nudge.sender_id != "lead_fail_1"
+
+        sent = engine.dispatch_warm_nudges(_send, now=midday, max_nudges=1)
+        assert attempted == ["lead_fail_1", "lead_ok_2"]
+        assert len(sent) == 1 and sent[0].sender_id == "lead_ok_2" and sent[0].lang == "es"
+
+        # Re-running never nudges lead_ok_2 a second time (single-touch idempotency)
+        sent_again = engine.dispatch_warm_nudges(lambda n: n.sender_id == "lead_ok_2", now=midday, max_nudges=5)
+        assert sent_again == []
+    finally:
+        store.close()

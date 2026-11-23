@@ -26,6 +26,23 @@ _HUMAN_PATTERNS = (
     "talk to a human",
 )
 
+_COMPLAINT_OPTOUT_PATTERNS = (
+    "stop messaging",
+    "do not contact",
+    "dont contact",
+    "unsubscribe",
+    "opt out",
+    "remove my",
+    "gdpr",
+    "rgpd",
+    "no me escribas",
+    "deja de escribir",
+    "darme de baja",
+    "quita mi anuncio",
+    "borra mis datos",
+    "denunciar",
+)
+
 _SERVICE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "web_scraping": ("scraping", "scraper", "extraer datos", "precios", "catalogo", "price monitor"),
     "messaging_bot": ("bot", "whatsapp", "telegram", "chatbot", "atencion automatica"),
@@ -92,6 +109,9 @@ def classify_message(text: str, fallback_lang: Literal["es", "en"] = "es") -> NL
 
     if norm.count("http://") + norm.count("https://") >= 3 or any(p in norm for p in _SPAM_PATTERNS):
         return NLUResult(Intent.SPAM, lang, None, None, False)
+
+    if any(p in norm for p in _COMPLAINT_OPTOUT_PATTERNS):
+        return NLUResult(Intent.COMPLAINT_OPTOUT, lang, None, None, True)
 
     urgent = any(w in norm for w in _URGENT_WORDS)
     budget = extract_budget_eur(text)

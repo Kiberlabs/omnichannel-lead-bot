@@ -39,6 +39,7 @@ sequenceDiagram
 - **Webhook Idempotency by Design:** Deduplicates `(channel, message_id)` inside an atomic SQLite transaction so WhatsApp/Telegram webhook retries never trigger double replies or duplicate handoffs.
 - **Single-Shot or Multi-Turn Intake:** Automatically skips redundant questions if a prospect provides both project scope and budget in their opening message.
 - **Instant Human Escape & Silent Spam Drop:** Escalates immediately when a user asks for a person, and silently drops spam payloads before polluting the CRM queue.
+- **GDPR/Complaint Silence Guard & Single-Touch Warm Nudges:** `COMPLAINT_OPTOUT` transitions the thread permanently to `SILENCED` (`reply_text=None` + single urgent operator alert), while `dispatch_warm_nudges()` sends at most one polite follow-up during business hours (`09:30–21:00`) persisted in SQLite `WAL` (`lead_nudges`).
 
 ---
 

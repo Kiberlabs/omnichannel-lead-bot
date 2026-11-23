@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from .models import BotTurnResult, HandoffPayload, IncomingMessage, Intent, LeadState
+from collections.abc import Callable
+from datetime import datetime, timezone
+
+from .models import BotTurnResult, HandoffPayload, IncomingMessage, Intent, LeadSession, LeadState, WarmNudge
 from .nlu import classify_message
 from .storage import LeadStore
+
+_NUDGE_WINDOW_HM = ("09:30", "21:00")
 
 _COPY: dict[str, dict[str, str]] = {
     "es": {
@@ -24,6 +29,10 @@ _COPY: dict[str, dict[str, str]] = {
         "already_handed_off": (
             "Tu solicitud ya está en manos de nuestro equipo técnico; te responderemos en breve."
         ),
+        "warm_nudge": (
+            "Hola de nuevo — por si seguís valorando el proyecto{service_hint}, "
+            "quedamos disponibles por aquí sin compromiso."
+        ),
     },
     "en": {
         "ask_service": (
@@ -43,6 +52,10 @@ _COPY: dict[str, dict[str, str]] = {
         ),
         "already_handed_off": (
             "Your request is already queued with our engineering team; someone will reply shortly."
+        ),
+        "warm_nudge": (
+            "Quick check-in — if you are still scoping the project{service_hint}, "
+            "happy to help whenever you are ready."
         ),
     },
 }
@@ -79,7 +92,22 @@ class LeadQualificationEngine:
         handoff: HandoffPayload | None = None
         reply: str | None = None
 
-        if session.state == LeadState.SPAM_BLOCKED or nlu.intent == Intent.SPAM:
+        if session.state == LeadState.SILENCED or nlu.intent == Intent.COMPLAINT_OPTOUT:
+            was_silenced = session.state == LeadState.SILENCED
+            session.state = LeadState.SILENCED
+            session.urgent = True
+            reply = None
+            if not was_silenced:
+                handoff = HandoffPayload(
+                    sender_id=session.sender_id,
+                    channel=session.channel,
+                    lang=session.lang,
+                    reason="complaint_optout",
+                    service_need=session.service_need,
+                    estimated_budget_eur=session.estimated_budget_eur,
+                    urgent=True,
+                )
+        elif session.state == LeadState.SPAM_BLOCKED or nlu.intent == Intent.SPAM:
             session.state = LeadState.SPAM_BLOCKED
             reply = None
         elif session.state == LeadState.HANDOFF_READY:
@@ -129,3 +157,29 @@ class LeadQualificationEngine:
             reply_text=reply,
             handoff=handoff,
         )
+
+    def dispatch_warm_nudges(
+        self,
+        send_fn: Callable[[WarmNudge], bool],
+        *,
+        now: datetime | None = None,
+        max_nudges: int = 5,
+    ) -> list[WarmNudge]:
+        """Send at most one polite follow-up per idle lead during business hours (09:30-21:00)."""
+        current = now or datetime.now(timezone.utc)
+        hm = current.strftime("%H:%M")
+        if max_nudges <= 0 or not (_NUDGE_WINDOW_HM[0] <= hm <= _NUDGE_WINDOW_HM[1]):
+            return []
+
+        sent: list[WarmNudge] = []
+        for session in self.store.find_stale_leads_for_nudge(current):
+            if len(sent) >= max_nudges:
+                break
+            hint = f" ({session.service_need})" if session.service_need else ""
+            text = _COPY[session.lang]["warm_nudge"].format(service_hint=hint)
+            nudge = WarmNudge(channel=session.channel, sender_id=session.sender_id, lang=session.lang, text=text)
+            if not send_fn(nudge):
+                continue
+            if self.store.record_nudge_sent(session.channel, session.sender_id, current, text):
+                sent.append(nudge)
+        return sent

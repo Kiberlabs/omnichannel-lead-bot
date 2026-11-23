@@ -15,6 +15,7 @@ class LeadState(str, Enum):
     AWAITING_BUDGET = "awaiting_budget"
     HANDOFF_READY = "handoff_ready"
     SPAM_BLOCKED = "spam_blocked"
+    SILENCED = "silenced"
 
 
 class Intent(str, Enum):
@@ -24,6 +25,7 @@ class Intent(str, Enum):
     SERVICE_INQUIRY = "service_inquiry"
     BUDGET_PROVIDED = "budget_provided"
     HUMAN_ESCALATION = "human_escalation"
+    COMPLAINT_OPTOUT = "complaint_optout"
     SPAM = "spam"
     UNKNOWN = "unknown"
 
@@ -57,10 +59,19 @@ class HandoffPayload(BaseModel):
     sender_id: str
     channel: str
     lang: str
-    reason: Literal["qualified_lead", "human_requested"]
+    reason: Literal["qualified_lead", "human_requested", "complaint_optout"]
     service_need: str | None
     estimated_budget_eur: float | None
     urgent: bool
+
+
+class WarmNudge(BaseModel):
+    """Single-touch polite follow-up emitted for an idle unconverted lead."""
+
+    channel: str
+    sender_id: str
+    lang: Literal["es", "en"]
+    text: str
 
 
 class BotTurnResult(BaseModel):

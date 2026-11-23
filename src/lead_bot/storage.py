@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS handoff_queue (
     urgent INTEGER NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS lead_nudges (
+    channel TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    nudged_at TEXT NOT NULL,
+    nudge_text TEXT NOT NULL,
+    PRIMARY KEY (channel, sender_id)
+);
 """
 
 
@@ -155,6 +163,58 @@ class LeadStore:
             "FROM handoff_queue ORDER BY id ASC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def find_stale_leads_for_nudge(
+        self,
+        now: datetime,
+        *,
+        min_idle_hours: float = 12.0,
+        max_idle_hours: float = 36.0,
+    ) -> list[LeadSession]:
+        """Return unconverted AWAITING_SERVICE/AWAITING_BUDGET leads idle within [min, max] hours and never nudged."""
+        rows = self._conn.execute(
+            """
+            SELECT s.channel, s.sender_id, s.lang, s.state, s.service_need,
+                   s.estimated_budget_eur, s.urgent, s.updated_at
+            FROM lead_sessions s
+            LEFT JOIN lead_nudges n ON n.channel = s.channel AND n.sender_id = s.sender_id
+            WHERE n.sender_id IS NULL
+              AND s.state IN ('awaiting_service', 'awaiting_budget')
+            ORDER BY s.updated_at ASC
+            """
+        ).fetchall()
+        min_sec = min_idle_hours * 3600.0
+        max_sec = max_idle_hours * 3600.0
+        out: list[LeadSession] = []
+        for row in rows:
+            updated_at = datetime.fromisoformat(row["updated_at"])
+            idle_sec = (now - updated_at).total_seconds()
+            if min_sec <= idle_sec <= max_sec:
+                out.append(
+                    LeadSession(
+                        channel=row["channel"],
+                        sender_id=row["sender_id"],
+                        lang=row["lang"],
+                        state=LeadState(row["state"]),
+                        service_need=row["service_need"],
+                        estimated_budget_eur=row["estimated_budget_eur"],
+                        urgent=bool(row["urgent"]),
+                        updated_at=updated_at,
+                    )
+                )
+        return out
+
+    def record_nudge_sent(self, channel: str, sender_id: str, nudged_at: datetime, text: str) -> bool:
+        """Persist single-touch nudge atomically; returns False if lead was already nudged."""
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO lead_nudges (channel, sender_id, nudged_at, nudge_text) VALUES (?, ?, ?, ?)",
+                    (channel, sender_id, nudged_at.isoformat(), text),
+                )
+            return True
+        except sqlite3.IntegrityError:
+            return False
 
     def close(self) -> None:
         self._conn.close()
