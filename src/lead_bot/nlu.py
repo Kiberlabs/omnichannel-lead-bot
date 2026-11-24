@@ -88,7 +88,8 @@ _EN_HINTS = ("hello", "hi", "need", "looking", "budget", "price", "company", "bu
 
 
 def _compile_keywords_re(words: tuple[str, ...], extra_patterns: tuple[str, ...] = ()) -> re.Pattern[str]:
-    alts = [rf"\b{r'\s+'.join(map(re.escape, w.split()))}\b" for w in words]
+    sep = r"\s+"
+    alts = [rf"\b{sep.join(map(re.escape, w.split()))}\b" for w in words]
     alts.extend(extra_patterns)
     return re.compile(rf"(?:{'|'.join(alts)})")
 
