@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def ensure_utc(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
 class LeadState(str, Enum):
@@ -39,6 +43,26 @@ class IncomingMessage(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    @field_validator("sender_id", "message_id")
+    @classmethod
+    def _check_non_blank_id(cls, value: str) -> str:
+        stripped = value.strip()
+        if len(stripped) < 2:
+            raise ValueError("Identifier must contain at least 2 non-whitespace characters.")
+        return stripped
+
+    @field_validator("text")
+    @classmethod
+    def _check_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text must not be blank.")
+        return value
+
+    @field_validator("received_at")
+    @classmethod
+    def _normalize_received_at(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
 
 class LeadSession(BaseModel):
     """Persisted per-(channel, sender_id) qualification state and captured slots."""
@@ -51,6 +75,11 @@ class LeadSession(BaseModel):
     estimated_budget_eur: float | None = None
     urgent: bool = False
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("updated_at")
+    @classmethod
+    def _normalize_updated_at(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
 
 
 class HandoffPayload(BaseModel):
