@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+_ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 
 
 def ensure_utc(dt: datetime) -> datetime:
@@ -46,7 +49,7 @@ class IncomingMessage(BaseModel):
     @field_validator("sender_id", "message_id")
     @classmethod
     def _check_non_blank_id(cls, value: str) -> str:
-        stripped = value.strip()
+        stripped = _ZERO_WIDTH_RE.sub("", value).strip()
         if len(stripped) < 2:
             raise ValueError("Identifier must contain at least 2 non-whitespace characters.")
         return stripped
@@ -54,7 +57,7 @@ class IncomingMessage(BaseModel):
     @field_validator("text")
     @classmethod
     def _check_non_blank_text(cls, value: str) -> str:
-        if not value.strip():
+        if not _ZERO_WIDTH_RE.sub("", value).strip():
             raise ValueError("text must not be blank.")
         return value
 

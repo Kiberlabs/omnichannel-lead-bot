@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import gc
 import json
 import random
+import shutil
 import sqlite3
 import threading
 import time
@@ -778,3 +780,48 @@ def test_high_concurrency_16_thread_barrier_leadstore_and_nudge_storm(tmp_path: 
         sent_counts = list(pool.map(_nudge_worker, range(8)))
 
     assert sum(sent_counts) == 3
+
+
+def test_unicode_nfd_nfkc_and_zero_width_bypass_guards() -> None:
+    # NFD decomposed Spanish accents & zero-width characters cannot evade NLU or validation
+    res_nfd = classify_message("Hola, necesito automatizacio\u0301n y presupuesto $1\u200b,200")
+    assert res_nfd.intent == Intent.SERVICE_INQUIRY
+    assert res_nfd.service_need == "b2b_automation"
+    assert res_nfd.budget_eur == 1200.0
+
+    res_optout = classify_message("Quiero dar\u200bme de b\u200baja RGPD")
+    assert res_optout.intent == Intent.COMPLAINT_OPTOUT
+
+    res_nfkc = classify_message("Need \uff42\uff4f\uff54 \uff11\uff10\uff10\uff10\u20ac")
+    assert res_nfkc.service_need == "messaging_bot"
+    assert res_nfkc.budget_eur == 1000.0
+
+    res_spam = classify_message("Claim free cryp\u200bto airdrop now")
+    assert res_spam.intent == Intent.SPAM
+
+    for zw in ("\u200b\u200c\u200d", "\ufeff  \u2060"):
+        with pytest.raises(ValidationError):
+            IncomingMessage(channel="whatsapp", sender_id="u1", message_id="m1", text=zw)
+        with pytest.raises(ValidationError):
+            IncomingMessage(channel="whatsapp", sender_id=zw, message_id="m1", text="hola")
+        with pytest.raises(ValidationError):
+            IncomingMessage(channel="whatsapp", sender_id="u1", message_id=zw, text="hola")
+
+
+def test_leadstore_wal_busy_timeout_and_windows_rmtree_cleanup(tmp_path: Path) -> None:
+    wal_dir = tmp_path / "wal_clean"
+    wal_dir.mkdir()
+    db_file = wal_dir / "clean.db"
+
+    def _unclosed() -> None:
+        s = LeadStore(db_file)
+        assert s.journal_mode() == "wal"
+        assert s._ensure_conn().execute("PRAGMA busy_timeout;").fetchone()[0] == 5000
+        LeadQualificationEngine(s).handle_message(
+            IncomingMessage(channel="whatsapp", sender_id="u_gc", message_id="m_gc", text="Hola")
+        )
+
+    _unclosed()
+    gc.collect()
+    shutil.rmtree(wal_dir)
+    assert not wal_dir.exists()

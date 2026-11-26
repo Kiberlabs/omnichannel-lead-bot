@@ -4,6 +4,7 @@ import random
 import sqlite3
 import threading
 import time
+import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -13,6 +14,13 @@ from .models import HandoffPayload, IncomingMessage, LeadSession, LeadState, ens
 
 _PATH_LOCKS_GUARD = threading.Lock()
 _PATH_LOCKS: dict[Path, threading.RLock] = {}
+
+
+def _close_conn_box(box: list[sqlite3.Connection | None]) -> None:
+    conn = box[0]
+    if conn is not None:
+        box[0] = None
+        conn.close()
 
 
 def _lock_for_path(db_path: Path) -> threading.RLock:
@@ -79,27 +87,59 @@ class LeadStore:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = _lock_for_path(self.db_path)
         self._tx_depth = 0
-        self._conn = sqlite3.connect(
+        self._conn_box: list[sqlite3.Connection | None] = [None]
+        self._finalizer = weakref.finalize(self, _close_conn_box, self._conn_box)
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(
             str(self.db_path),
             timeout=5.0,
             check_same_thread=False,
             isolation_level=None,
         )
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA busy_timeout=5000;")
-        self._conn.execute("PRAGMA foreign_keys=ON;")
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=5000;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+        except BaseException:
+            conn.close()
+            raise
+        return conn
+
+    def _ensure_conn(self) -> sqlite3.Connection:
+        if self._conn_box[0] is None:
+            self._conn_box[0] = self._connect()
+            if not self._finalizer.alive:
+                self._finalizer = weakref.finalize(self, _close_conn_box, self._conn_box)
+        return self._conn_box[0]
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        return self._ensure_conn()
+
+    def _drop_conn(self) -> None:
+        _close_conn_box(self._conn_box)
+
+    def _init_schema(self) -> None:
         with self._lock:
             for attempt in range(20):
                 try:
-                    if self.journal_mode() != "wal":
-                        self._conn.execute("PRAGMA journal_mode=WAL;")
-                    self._conn.execute("PRAGMA synchronous=NORMAL;")
-                    self._conn.executescript(SCHEMA_SQL)
+                    conn = self._ensure_conn()
+                    row = conn.execute("PRAGMA journal_mode;").fetchone()
+                    if not row or str(row[0]).lower() != "wal":
+                        conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
+                    conn.executescript(SCHEMA_SQL)
                     break
                 except sqlite3.OperationalError as exc:
                     if "locked" not in str(exc).lower() or attempt == 19:
+                        self._drop_conn()
                         raise
                     time.sleep(0.02 + random.uniform(0.0, 0.03))
+                except BaseException:
+                    self._drop_conn()
+                    raise
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -331,7 +371,7 @@ class LeadStore:
 
     def close(self) -> None:
         with self._lock:
-            self._conn.close()
+            self._finalizer()
 
     def __enter__(self) -> LeadStore:
         return self

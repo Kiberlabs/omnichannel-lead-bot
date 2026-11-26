@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
 from .models import Intent
+
+_ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 
 _SPAM_PATTERNS = (
     "crypto airdrop",
@@ -121,14 +124,17 @@ class NLUResult:
 
 
 def _normalize(text: str) -> str:
-    table = str.maketrans("áéíóúüÁÉÍÓÚÜ\u2019\u2018", "aeiouuAEIOUU''")
-    return re.sub(r"\s+", " ", text.translate(table).lower()).strip()
+    cleaned = _ZERO_WIDTH_RE.sub("", text).replace("\u2019", "'").replace("\u2018", "'")
+    nfkd = unicodedata.normalize("NFKD", cleaned)
+    ascii_folded = "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", ascii_folded.lower()).strip()
 
 
 def detect_language(text: str, fallback: Literal["es", "en"] = "es") -> Literal["es", "en"]:
     """Score Spanish vs. English lexical hints (plus inverted '?'/'ñ') and fall back on ties."""
-    tokens = set(re.findall(r"[a-zñ]+", text.lower()))
-    es_score = len(tokens.intersection(_ES_HINTS)) + (2 if "¿" in text or "ñ" in text.lower() else 0)
+    clean = unicodedata.normalize("NFC", _ZERO_WIDTH_RE.sub("", text))
+    tokens = set(re.findall(r"[a-zñ]+", clean.lower()))
+    es_score = len(tokens.intersection(_ES_HINTS)) + (2 if "¿" in clean or "ñ" in clean.lower() else 0)
     en_score = len(tokens.intersection(_EN_HINTS))
     if en_score > es_score:
         return "en"
@@ -139,7 +145,8 @@ def detect_language(text: str, fallback: Literal["es", "en"] = "es") -> Literal[
 
 def extract_budget_eur(text: str) -> float | None:
     """Parse European/US currency expressions (e.g. '1.200€', '$1,500', '$3k') within 50–250,000 EUR."""
-    for match in _BUDGET_RE.finditer(text):
+    clean = unicodedata.normalize("NFKC", _ZERO_WIDTH_RE.sub("", text))
+    for match in _BUDGET_RE.finditer(clean):
         int_part = match.group(1) or match.group(4) or ""
         dec_part = match.group(2) or match.group(5) or ""
         suffix = (match.group(3) or match.group(6) or "").lower()
